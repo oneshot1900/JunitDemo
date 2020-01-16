@@ -1,0 +1,71 @@
+//执行jacocoCoverageReport, 在 build/reports/jacoco中查看输出报告，格式为html
+apply plugin: 'jacoco'
+android {
+
+    buildTypes {
+        debug {
+            testCoverageEnabled true
+        }
+    }
+
+    jacoco {
+        version "0.8.4"
+    }
+}
+
+dependencies {
+    //引入单元测试基础库
+    testImplementation 'junit:junit:4.12'
+    //引入mock，用于模拟jvm以外的类
+    testImplementation 'org.mockito:mockito-core:3.2.4'
+    //引入robol，用于创建Android核心类,Android Gradle Plugin 3.2.1 +
+    testImplementation "org.robolectric:robolectric:3.8"
+    //引入powermock，用于mock静态私有方法
+    testImplementation 'org.powermock:powermock-module-junit4:2.0.4'
+    testImplementation 'org.powermock:powermock-api-mockito2:2.0.4'
+}
+
+tasks.withType(Test) {
+    jacoco.includeNoLocationClasses = true
+}
+
+task jacocoCoverageReport(type: JacocoReport, dependsOn: ['testDebugUnitTest', 'createDebugCoverageReport']) {
+    reports {
+        xml.enabled = false
+        html.enabled = true
+        //指定输出目录，默认是reports/jacoco/
+//        html.destination file("${buildDir}/jacocoHtml")
+    }
+
+    //排除的class
+    Project projectTested = project(":app")
+    def fileFilter = ['**/R.class', '**/R$*.class', '**/BuildConfig.*', '**/Manifest*.*', 'android/**/*.*']
+    def classPath = fileTree(dir: "$projectTested.buildDir/intermediates/javac/debug", excludes: fileFilter)
+    println "classPath = " + classPath
+    def javaPath = "$projectTested.projectDir/src/main/java"
+    println "javaPath = " + javaPath
+    //被测试的源码位置
+    sourceDirectories = files([javaPath])
+    //被测试的字节码位置
+    classDirectories = files([classPath])
+    def buildPath = project.buildDir
+    println "buildPath = " + buildPath
+    executionData = fileTree(dir: buildPath, includes: [
+            'jacoco/testDebugUnitTest.exec', 'outputs/code_coverage/debugAndroidTest/connected/*.ec'
+    ])
+
+}
+
+
+//执行结束，晚于doLast，如果有测试用例失败，导致testDebugUnitTest failure，继续执行jacoco
+gradle.taskGraph.afterTask { Task task, TaskState state ->
+    if (state.failure && task.name == "testDebugUnitTest") {
+        println "====receive testDebugUnitTest failure, continue jacoco task"
+        //删除原有依赖，防止循环
+        Set<Object> dependTasks = jacocoCoverageReport.getDependsOn()
+        dependTasks.clear()
+        //继续执行jacoco
+        jacocoCoverageReport.generate()
+    }
+}
+
